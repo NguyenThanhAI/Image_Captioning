@@ -135,7 +135,7 @@ def get_text_vectorizer(config_file: str, sequence_length: int, text_data: List[
             output_sequence_length=sequence_length,
             standardize=custom_standardization,
         )
-        vectorization.adapt(text_data)
+        vectorization.adapt(tf.data.Dataset.from_tensor_slices(text_data)) # Must convert list of string to tf dataset
 
     num_vocabs = len(vectorization.get_vocabulary())
 

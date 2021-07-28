@@ -55,7 +55,8 @@ def generate_caption(sample_img):
     # Generate the caption using the Transformer decoder
     decoded_caption = "<start> "
     for i in range(max_decoded_sentence_length):
-        tokenized_caption = vectorization([decoded_caption])[:, :-1]
+        t_decoded_caption = tf.convert_to_tensor(decoded_caption)[tf.newaxis]
+        tokenized_caption = vectorization(t_decoded_caption)[:, :-1]
         mask = tf.math.not_equal(tokenized_caption, 0)
         predictions = caption_model.decoder(
             tokenized_caption, encoded_img, training=False, mask=mask
@@ -66,8 +67,9 @@ def generate_caption(sample_img):
             break
         decoded_caption += " " + sampled_token
 
-    print("PREDICTED CAPTION:", end=" ")
-    print(decoded_caption.replace("<start> ", "").replace(" <end>", "").strip())
+    #print("PREDICTED CAPTION:", end=" ")
+    #print(decoded_caption.replace("<start> ", "").replace(" <end>", "").strip())
+    return decoded_caption.replace("<start> ", "").replace(" <end>", "").strip()
 
 
 if __name__ == '__main__':
@@ -94,11 +96,15 @@ if __name__ == '__main__':
                                       sequence_length=sequence_length, vocab_size=num_vocabs)
 
     caption_model = ImageCaptioningModel(cnn_model=cnn_model, encoder=encoder, decoder=decoder)
-
-    caption_model.load_weights(os.path.join(model_dir, "caption_model_best.h5"))
-
+    caption_model.built = True
     vocab = vectorization.get_vocabulary()
     index_lookup = dict(zip(range(len(vocab)), vocab))
     max_decoded_sentence_length = sequence_length - 1
 
     generate_caption(image_path)
+
+    caption_model.load_weights(os.path.join(model_dir, "caption_model_best.h5"))
+
+    caption = generate_caption(image_path)
+    print("PREDICTED CAPTION:", end=" ")
+    print(caption)
