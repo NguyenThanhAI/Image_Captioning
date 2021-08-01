@@ -8,9 +8,11 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
 
-from transformer_models import get_cnn_model, TransformerEncoderBlock, TransformerDecoderBlock, ImageCaptioningModel
+from transformer_models import get_cnn_model, get_encoder_model, get_decoder_model, ImageCaptioningModel
 from dataset_utils import load_captions_data, train_val_split, get_text_vectorizer, save_text_vectorizer, make_dataset, \
     read_image
+
+from utils import LearningRateSchedule, EarlyStoppingAtMaxAccuracy
 
 
 seed = 111
@@ -29,6 +31,7 @@ def get_args():
     parser.add_argument("--num_heads", type=int, default=2)
     parser.add_argument("--ff_dim", type=int, default=512)
     parser.add_argument("--embed_dim", type=int, default=512)
+    parser.add_argument("--num_layers", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--buffer_size", type=int, default=2048)
     parser.add_argument("--num_epochs", type=int, default=30)
@@ -85,6 +88,7 @@ if __name__ == '__main__':
     num_heads = args.num_heads
     ff_dim = args.ff_dim
     embed_dim = args.embed_dim
+    num_layers = args.num_layers
     batch_size = args.batch_size
     buffer_size = args.buffer_size
     num_epochs = args.num_epochs
@@ -112,12 +116,13 @@ if __name__ == '__main__':
     valid_dataset = make_dataset(list(valid_data.keys()), list(valid_data.values()), vectorization=vectorization,
                                  image_size=image_size, batch_size=batch_size, buffer_size=buffer_size)
 
-    cnn_model = get_cnn_model(image_size=image_size)
+    cnn_model, flatten_dim, feature_dim = get_cnn_model(image_size=image_size)
 
-    encoder = TransformerEncoderBlock(embed_dim=embed_dim, dense_dim=ff_dim,  num_heads=num_heads)
+    encoder = get_encoder_model(flatten_dim=flatten_dim,feature_dim=feature_dim, embed_dim=embed_dim, d_ff=ff_dim,
+                                num_heads=num_heads, num_layers=num_layers)
 
-    decoder = TransformerDecoderBlock(embed_dim=embed_dim, ff_dim=ff_dim, num_heads=num_heads,
-                                      sequence_length=sequence_length, vocab_size=num_vocabs)
+    decoder = get_decoder_model(sequence_length=sequence_length, num_vocabs=num_vocabs, embed_dim=embed_dim,
+                                d_ff=ff_dim, num_heads=num_heads, num_layers=num_layers)
 
     caption_model = ImageCaptioningModel(cnn_model=cnn_model, encoder=encoder, decoder=decoder)
 
@@ -125,14 +130,7 @@ if __name__ == '__main__':
         from_logits=True, reduction="none"
     )
 
-    early_stopping = keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
-
-    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8,
-                                                  patience=2, min_lr=1e-6, verbose=True)
-
-    checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=os.path.join(save_dir, "caption_model_best.h5"),
-                                                    monitor="val_acc", verbose=1, save_best_only=True,
-                                                    save_weights_only=True, mode="max")
+    early_stopping = EarlyStoppingAtMaxAccuracy(patience=10)
 
     caption_model.compile(optimizer=keras.optimizers.Adam(), loss=cross_entropy)
 
@@ -140,8 +138,10 @@ if __name__ == '__main__':
         train_dataset,
         epochs=num_epochs,
         validation_data=valid_dataset,
-        callbacks=[early_stopping, reduce_lr, checkpoint]
+        callbacks=[early_stopping]
     )
+
+    print("Start inferencing")
 
     vocab = vectorization.get_vocabulary()
     index_lookup = dict(zip(range(len(vocab)), vocab))

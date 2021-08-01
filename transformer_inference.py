@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
 
-from transformer_models import get_cnn_model, TransformerEncoderBlock, TransformerDecoderBlock, ImageCaptioningModel
+from transformer_models import get_cnn_model, get_encoder_model, get_decoder_model, ImageCaptioningModel
 from dataset_utils import load_captions_data, train_val_split, get_text_vectorizer, save_text_vectorizer, make_dataset, \
     read_image
 
@@ -29,6 +29,7 @@ def get_args():
     parser.add_argument("--num_heads", type=int, default=2)
     parser.add_argument("--ff_dim", type=int, default=512)
     parser.add_argument("--embed_dim", type=int, default=512)
+    parser.add_argument("--num_layers", type=int, default=2)
 
     args = parser.parse_args()
 
@@ -75,6 +76,8 @@ def generate_caption(sample_img):
 if __name__ == '__main__':
     args = get_args()
 
+    print("Arguments: {}".format(args))
+
     image_path = args.image_path
     model_dir = args.model_dir
     config_file = args.config_file
@@ -83,17 +86,19 @@ if __name__ == '__main__':
     num_heads = args.num_heads
     ff_dim = args.ff_dim
     embed_dim = args.embed_dim
+    num_layers = args.num_layers
 
     vectorization, num_vocabs = get_text_vectorizer(config_file=config_file, sequence_length=20, text_data=None)
 
     print("Num vocabularies: {}".format(num_vocabs))
 
-    cnn_model = get_cnn_model(image_size=image_size)
+    cnn_model, flatten_dim, feature_dim = get_cnn_model(image_size=image_size)
 
-    encoder = TransformerEncoderBlock(embed_dim=embed_dim, dense_dim=ff_dim, num_heads=num_heads)
+    encoder = get_encoder_model(flatten_dim=flatten_dim,feature_dim=feature_dim, embed_dim=embed_dim, d_ff=ff_dim,
+                                num_heads=2, num_layers=num_layers)
 
-    decoder = TransformerDecoderBlock(embed_dim=embed_dim, ff_dim=ff_dim, num_heads=num_heads,
-                                      sequence_length=sequence_length, vocab_size=num_vocabs)
+    decoder = get_decoder_model(sequence_length=sequence_length, num_vocabs=num_vocabs, embed_dim=embed_dim,
+                                d_ff=ff_dim, num_heads=num_heads, num_layers=num_layers)
 
     caption_model = ImageCaptioningModel(cnn_model=cnn_model, encoder=encoder, decoder=decoder)
     caption_model.built = True
