@@ -32,6 +32,7 @@ def get_args():
     parser.add_argument("--ff_dim", type=int, default=512)
     parser.add_argument("--embed_dim", type=int, default=512)
     parser.add_argument("--num_layers", type=int, default=2)
+    parser.add_argument("--rate", type=float, default=0.4)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--buffer_size", type=int, default=2048)
     parser.add_argument("--num_epochs", type=int, default=30)
@@ -64,9 +65,7 @@ def generate_caption(sample_img):
         t_decoded_caption = tf.convert_to_tensor(decoded_caption)[tf.newaxis]
         tokenized_caption = vectorization(t_decoded_caption)[:, :-1]
         mask = tf.math.not_equal(tokenized_caption, 0)
-        predictions = caption_model.decoder(
-            tokenized_caption, encoded_img, training=False, mask=mask
-        )
+        predictions = caption_model.decoder([tokenized_caption, encoded_img], training=False)
         sampled_token_index = np.argmax(predictions[0, i, :])
         sampled_token = index_lookup[sampled_token_index]
         if sampled_token == " <end>":
@@ -89,6 +88,7 @@ if __name__ == '__main__':
     ff_dim = args.ff_dim
     embed_dim = args.embed_dim
     num_layers = args.num_layers
+    rate = args.rate
     batch_size = args.batch_size
     buffer_size = args.buffer_size
     num_epochs = args.num_epochs
@@ -119,10 +119,10 @@ if __name__ == '__main__':
     cnn_model, flatten_dim, feature_dim = get_cnn_model(image_size=image_size)
 
     encoder = get_encoder_model(flatten_dim=flatten_dim,feature_dim=feature_dim, embed_dim=embed_dim, d_ff=ff_dim,
-                                num_heads=num_heads, num_layers=num_layers)
+                                num_heads=num_heads, num_layers=num_layers, rate=rate)
 
     decoder = get_decoder_model(sequence_length=sequence_length, num_vocabs=num_vocabs, embed_dim=embed_dim,
-                                d_ff=ff_dim, num_heads=num_heads, num_layers=num_layers)
+                                d_ff=ff_dim, num_heads=num_heads, num_layers=num_layers, rate=rate)
 
     caption_model = ImageCaptioningModel(cnn_model=cnn_model, encoder=encoder, decoder=decoder)
 

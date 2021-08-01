@@ -49,7 +49,7 @@ def point_wise_feed_forward_network(d_model, dff):
 
 
 def get_encoder_block(feature_dim: int=1280, embed_dim: int=512,
-                      d_ff: int=1024, num_heads: int=8) -> tf.keras.Model:
+                      d_ff: int=1024, num_heads: int=8, rate: float=0.4) -> tf.keras.Model:
     inputs = tf.keras.Input(shape=(None, feature_dim), dtype=tf.float32, name="encoder_block_inputs")
 
     multi_head_attention = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
@@ -63,22 +63,29 @@ def get_encoder_block(feature_dim: int=1280, embed_dim: int=512,
     layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
     layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
 
+    dropout1 = tf.keras.layers.Dropout(rate)
+    dropout2 = tf.keras.layers.Dropout(rate)
+
     attention_output, _ = multi_head_attention(query=mha_input, key=mha_input, value=mha_input,
                                                attention_mask=None, return_attention_scores=True)
+    attention_output = dropout1(attention_output)
 
     out_1 = layernorm1(attention_output + mha_input)
 
     ffn_output = ffn(out_1)
+    ffn_output = dropout2(ffn_output)
     out_2 = layernorm2(out_1 + ffn_output)
 
     return tf.keras.Model(inputs=[inputs], outputs=[out_2])
 
 
 def get_encoder_model(flatten_dim: int=100, feature_dim: int=1280, embed_dim: int=512,
-                      d_ff: int=1024, num_heads: int=8, num_layers: int=6):
+                      d_ff: int=1024, num_heads: int=8, num_layers: int=6, rate: float=0.4):
     inputs = tf.keras.Input(shape=(None, feature_dim), dtype=tf.float32, name="encoder_inputs")
 
     pos_encoding = positional_encoding(position=flatten_dim, d_model=embed_dim)
+
+    dropout = tf.keras.layers.Dropout(rate)
 
     if feature_dim != embed_dim:
         projected_inputs = tf.keras.layers.Dense(embed_dim, activation="relu")(inputs)
@@ -86,10 +93,12 @@ def get_encoder_model(flatten_dim: int=100, feature_dim: int=1280, embed_dim: in
         projected_inputs = inputs
 
     x = projected_inputs + pos_encoding
+    x = dropout(x)
+
 
     assert num_layers >= 1
     encoder_layers = [get_encoder_block(feature_dim=embed_dim, embed_dim=embed_dim,
-                                                    d_ff=d_ff, num_heads=num_heads) for _ in range(num_layers)]
+                                        d_ff=d_ff, num_heads=num_heads, rate=rate) for _ in range(num_layers)]
 
     for i in range(num_layers):
         x = encoder_layers[i](x)
@@ -97,7 +106,7 @@ def get_encoder_model(flatten_dim: int=100, feature_dim: int=1280, embed_dim: in
     return tf.keras.Model(inputs=[inputs], outputs=[x], name="encoder")
 
 
-def get_decoder_block(embed_dim: int=512, d_ff: int=1024, num_heads: int=8) -> tf.keras.Model:
+def get_decoder_block(embed_dim: int=512, d_ff: int=1024, num_heads: int=8, rate: float=0.4) -> tf.keras.Model:
     inputs = tf.keras.Input(shape=(None, embed_dim), dtype=tf.float32, name="decoder_block_inputs")
     encoder_output = tf.keras.Input(shape=(None, embed_dim), dtype=tf.float32)
     look_ahead_mask = tf.keras.Input(shape=(None, None))
@@ -108,6 +117,10 @@ def get_decoder_block(embed_dim: int=512, d_ff: int=1024, num_heads: int=8) -> t
 
     ffn = point_wise_feed_forward_network(d_model=embed_dim, dff=d_ff)
 
+    dropout1 = tf.keras.layers.Dropout(rate)
+    dropout2 = tf.keras.layers.Dropout(rate)
+    dropout3 = tf.keras.layers.Dropout(rate)
+
     layernorm_1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
     layernorm_2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
     layernorm_3 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -115,6 +128,7 @@ def get_decoder_block(embed_dim: int=512, d_ff: int=1024, num_heads: int=8) -> t
     attention_output_1, attention_weight_1 = multi_head_attention_1(query=inputs, key=inputs, value=inputs,
                                                                     attention_mask=look_ahead_mask,
                                                                     return_attention_scores=True)
+    attention_output_1 = dropout1(attention_output_1)
 
     out_1 = layernorm_1(attention_output_1 + inputs)
 
@@ -122,10 +136,12 @@ def get_decoder_block(embed_dim: int=512, d_ff: int=1024, num_heads: int=8) -> t
                                                                     key=encoder_output, value=encoder_output,
                                                                     attention_mask=padding_mask,
                                                                     return_attention_scores=True)
+    attention_output_2 = dropout2(attention_output_2)
 
     out_2 = layernorm_2(attention_output_2 + out_1)
 
     ffn_output = ffn(out_2)
+    ffn_output = dropout3(ffn_output)
 
     out_3 = layernorm_3(ffn_output + out_2)
 
@@ -152,7 +168,7 @@ def get_causal_attention_mask(inputs):
 
 
 def get_decoder_model(sequence_length: int=25, num_vocabs: int=10000, embed_dim: int=512,
-                      d_ff: int=1024, num_heads: int=8, num_layers: int=6) -> tf.keras.Model:
+                      d_ff: int=1024, num_heads: int=8, num_layers: int=6, rate: float=0.4) -> tf.keras.Model:
     inputs = tf.keras.Input(shape=(sequence_length - 1), dtype=tf.int32, name="decoder_inputs")
     encoder_output = tf.keras.Input(shape=(None, embed_dim), dtype=tf.float32, name="encoder_output")
 
@@ -165,13 +181,16 @@ def get_decoder_model(sequence_length: int=25, num_vocabs: int=10000, embed_dim:
 
     embedding = tf.keras.layers.Embedding(num_vocabs, embed_dim)
     pos_encoding = positional_encoding(position=sequence_length - 1, d_model=embed_dim)
+    dropout = tf.keras.layers.Dropout(rate)
 
     assert num_layers >= 1
-    decoder_layers = [get_decoder_block(embed_dim=embed_dim, d_ff=d_ff, num_heads=num_heads) for _ in range(num_layers)]
+    decoder_layers = [get_decoder_block(embed_dim=embed_dim, d_ff=d_ff,
+                                        num_heads=num_heads, rate=rate) for _ in range(num_layers)]
 
     dense_out = tf.keras.layers.Dense(num_vocabs)
 
     x = embedding(inputs) + pos_encoding
+    x = dropout(x)
 
     for i in range(num_layers):
         x = decoder_layers[i]([x, encoder_output, combined_mask, padding_mask])
@@ -183,18 +202,19 @@ def get_decoder_model(sequence_length: int=25, num_vocabs: int=10000, embed_dim:
 
 def get_image_captioning_model(image_size: int=299, embed_dim: int=512,
                                d_ff: int=1024, num_heads: int=8, num_layers: int=6,
-                               sequence_length: int=25, num_vocabs: int=10000) -> Tuple[tf.keras.Model, tf.keras.Model]:
+                               sequence_length: int=25, num_vocabs: int=10000,
+                               rate: float=0.4) -> Tuple[tf.keras.Model, tf.keras.Model]:
     inputs = tf.keras.Input(shape=(image_size, image_size, 3))
 
-    cnn_model = get_cnn_model(image_size=image_size)
+    cnn_model, flatten_dim, num_features = get_cnn_model(image_size=image_size)
 
-    out_cnn, flatten_dim, num_features = cnn_model(inputs)
+    out_cnn = cnn_model(inputs)
 
     #flatten_dim = out_cnn.shape[1]
     #feature_dim = out_cnn.shape[-1]
 
-    encoder_model = get_encoder_model(flatten_dim=flatten_dim, feature_dim=feature_dim, embed_dim=embed_dim,
-                                      d_ff=d_ff, num_heads=num_heads, num_layers=num_layers)
+    encoder_model = get_encoder_model(flatten_dim=flatten_dim, feature_dim=num_features, embed_dim=embed_dim,
+                                      d_ff=d_ff, num_heads=num_heads, num_layers=num_layers, rate=rate)
 
     out_encoder = encoder_model(out_cnn)
 
@@ -203,7 +223,7 @@ def get_image_captioning_model(image_size: int=299, embed_dim: int=512,
     decoder_inputs = tf.keras.Input(shape=(sequence_length - 1))
 
     decoder_model = get_decoder_model(sequence_length=sequence_length, num_vocabs=num_vocabs, embed_dim=embed_dim,
-                                      d_ff=d_ff, num_heads=num_heads, num_layers=num_layers)
+                                      d_ff=d_ff, num_heads=num_heads, num_layers=num_layers, rate=rate)
 
     out_decoder = decoder_model([decoder_inputs, out_encoder])
 

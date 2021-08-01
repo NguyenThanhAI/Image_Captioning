@@ -59,9 +59,7 @@ def generate_caption(sample_img):
         t_decoded_caption = tf.convert_to_tensor(decoded_caption)[tf.newaxis]
         tokenized_caption = vectorization(t_decoded_caption)[:, :-1]
         mask = tf.math.not_equal(tokenized_caption, 0)
-        predictions = caption_model.decoder(
-            tokenized_caption, encoded_img, training=False, mask=mask
-        )
+        predictions = caption_model.decoder([tokenized_caption, encoded_img], training=False)
         sampled_token_index = np.argmax(predictions[0, i, :])
         sampled_token = index_lookup[sampled_token_index]
         if sampled_token == " <end>":
