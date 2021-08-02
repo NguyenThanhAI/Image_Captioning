@@ -67,6 +67,7 @@ class EarlyStoppingAtMaxAccuracy(tf.keras.callbacks.Callback):
             self.save_models(epoch=epoch)
         else:
             self.wait += 1
+            print("{} does not improve from {}".format(self.monitor, self.best))
             if self.wait >= self.patience:
                 self.stopped_epoch = epoch
                 self.model.stop_training = True
@@ -78,7 +79,7 @@ class EarlyStoppingAtMaxAccuracy(tf.keras.callbacks.Callback):
             print("The {} does not improve from {} for {} epochs. Epoch {}: early stopping".format(self.monitor, self.best, self.patience, self.stopped_epoch + 1))
 
     def save_models(self, epoch):
-        self.model.cnn_model.save("cnn_model_epoch_{}_val_acc_{}".format(epoch + 1, self.best))
-        self.model.encoder.save("encoder_model_epoch_{}_val_acc_{}".format(epoch + 1, self.best))
-        self.model.decoder.save("decoder_model_epoch_{}_val_acc_{}".format(epoch + 1, self.best))
+        self.model.cnn_model.save(os.path.join(self.save_dir, "cnn_model_epoch_{}_val_acc_{}".format(epoch + 1, self.best)))
+        self.model.encoder.save(os.path.join(self.save_dir, "encoder_model_epoch_{}_val_acc_{}".format(epoch + 1, self.best)))
+        self.model.decoder.save(os.path.join(self.save_dir, "decoder_model_epoch_{}_val_acc_{}".format(epoch + 1, self.best)))
         print("Save cnn model, encoder, decoder")
