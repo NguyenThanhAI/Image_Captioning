@@ -130,9 +130,11 @@ if __name__ == '__main__':
         from_logits=True, reduction="none"
     )
 
+    lr = LearningRateSchedule(d_model=embed_dim, warmup_steps=1000)
     early_stopping = EarlyStoppingAtMaxAccuracy(patience=10)
 
-    caption_model.compile(optimizer=keras.optimizers.Adam(), loss=cross_entropy)
+    caption_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=lr, beta_2=0.98, epsilon=1e-9),
+                          loss=cross_entropy)
 
     caption_model.fit(
         train_dataset,
