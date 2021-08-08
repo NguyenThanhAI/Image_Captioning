@@ -25,8 +25,8 @@ def get_args():
     parser.add_argument("--model_dir", type=str, default=None)
     parser.add_argument("--config_file", type=str, default=None)
     parser.add_argument("--image_size", type=int, default=299)
-    parser.add_argument("--sequence_length", type=int, default=20)
-    parser.add_argument("--ff_dim", type=int, default=512)
+    parser.add_argument("--sequence_length", type=int, default=30)
+    parser.add_argument("--ff_dim", type=int, default=2048)
     parser.add_argument("--embed_dim", type=int, default=512)
     parser.add_argument("--dropout_rate", type=float, default=0.4)
     parser.add_argument("--recurrent_type", type=str, default="lstm")
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     dropout_rate = args.dropout_rate
     recurrent_type = args.recurrent_type
 
-    vectorization, num_vocabs = get_text_vectorizer(config_file=config_file, sequence_length=20, text_data=None)
+    vectorization, num_vocabs = get_text_vectorizer(config_file=config_file, sequence_length=sequence_length, text_data=None)
 
     print("Num vocabularies: {}".format(num_vocabs))
 

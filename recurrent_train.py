@@ -22,6 +22,7 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--images_dir", type=str, default=None)
+    parser.add_argument("--val_images_dir", type=str, default=None)
     parser.add_argument("--caption_path", type=str, default=None)
     parser.add_argument("--val_caption_path", type=str, default=None)
     parser.add_argument("--save_dir", type=str, default=None)
@@ -80,6 +81,7 @@ if __name__ == '__main__':
     args = get_args()
 
     images_dir = args.images_dir
+    val_images_dir = args.val_images_dir
     caption_path = args.caption_path
     val_caption_path = args.val_caption_path
     save_dir = args.save_dir
@@ -103,7 +105,7 @@ if __name__ == '__main__':
         train_data, train_text_data = load_captions_data(filename=caption_path,
                                                          images_dir=images_dir)
         valid_data, val_text_data = load_captions_data(filename=val_caption_path,
-                                                       images_dir=images_dir)
+                                                       images_dir=val_images_dir)
         text_data = train_text_data + val_text_data
     else:
         captions_mapping, text_data = load_captions_data(filename=caption_path,
