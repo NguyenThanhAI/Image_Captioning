@@ -129,15 +129,15 @@ if __name__ == '__main__':
                 text_data = data["text_data"]
                 f.close()
             print("Load data from file")
-            keys = train_data.keys()
+            keys = list(train_data.keys())
 
             for key in tqdm(keys):
                 train_data[os.path.join(images_dir, os.path.basename(key))] = train_data.pop(key)
 
-            keys = valid_data.keys()
+            keys = list(valid_data.keys())
 
             for key in tqdm(keys):
-                valid_data[os.path.join(images_dir, os.path.basename(key))] = valid_data.pop(key)
+                valid_data[os.path.join(val_images_dir, os.path.basename(key))] = valid_data.pop(key)
     else:
         captions_mapping, text_data = load_captions_data(filename=caption_path,
                                                          images_dir=images_dir)
