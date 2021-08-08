@@ -132,12 +132,14 @@ if __name__ == '__main__':
             keys = list(train_data.keys())
 
             for key in tqdm(keys):
-                train_data[os.path.join(images_dir, os.path.basename(key))] = train_data.pop(key)
+                #train_data[os.path.join(images_dir, os.path.basename(key))] = train_data.pop(key)
+                train_data[os.path.join(images_dir, os.path.split(key)[1])] = train_data.pop(key)
 
             keys = list(valid_data.keys())
 
             for key in tqdm(keys):
-                valid_data[os.path.join(val_images_dir, os.path.basename(key))] = valid_data.pop(key)
+                #valid_data[os.path.join(val_images_dir, os.path.basename(key))] = valid_data.pop(key)
+                valid_data[os.path.join(val_images_dir, os.path.split(key)[1])] = valid_data.pop(key)
     else:
         captions_mapping, text_data = load_captions_data(filename=caption_path,
                                                          images_dir=images_dir)
