@@ -109,7 +109,6 @@ if __name__ == '__main__':
         captions_mapping, text_data = load_captions_data(filename=caption_path,
                                                          images_dir=images_dir)
         train_data, valid_data = train_val_split(captions_mapping)
-    print("train_data: {}, valid_data: {}".format(train_data, valid_data))
     print("Number of training samples: ", len(train_data))
     print("Number of validation samples: ", len(valid_data))
 
