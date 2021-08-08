@@ -23,6 +23,7 @@ checkpoint
 *.json
 *.gif
 *.txt
+*.ipynb
 
 # Editors
 .vscode/

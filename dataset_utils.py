@@ -4,8 +4,11 @@ import re
 
 import pickle
 
+import json
+
 from typing import Tuple, List
 from itertools import groupby
+from tqdm import tqdm
 
 import pandas as pd
 import numpy as np
@@ -61,6 +64,35 @@ def load_captions_data(filename, images_dir: str):
             caption_list = list(map(lambda x: "<start> " + str(x[2]).strip() + " <end>", caption_list))
             captions_mapping[os.path.join(images_dir, image)] = caption_list
             text_data.extend(caption_list)
+    elif os.path.basename(filename).startswith("captions") and os.path.basename(filename).endswith(".json"):
+        with open(filename, "r") as f:
+            records = json.load(f)
+            f.close()
+
+        images = records["images"]
+        annotations = records["annotations"]
+        annotations.sort(key=lambda x: x["image_id"])
+
+        caption_mapping = {}
+        text_data = []
+        for image_id, captions in tqdm(groupby(annotations, key=lambda x: x["image_id"])):
+            # print("image id: {}, num captions: {}".format(image_id, len(list(captions))))
+            image = list(filter(lambda x: x["id"] == image_id, images))
+            assert len(image) == 1
+            image = image[0]
+            captions_list = list(map(lambda x: "<start> " + str(x["caption"]).strip().replace(".", "") + " <end>", list(captions)))
+            if len(captions_list) != 5:
+                if len(captions_list) < 5:
+                    #print("Number of corresponding captions less than five, add to equal five")
+                    captions_list = captions_list + captions_list[:5 - len(captions_list)]
+                else:
+                    #print("Number of corresponding captions greater than five, get first five captions")
+                    captions_list = captions_list[:5]
+            if len(captions_list) != 5:
+                print(len(captions_list))
+            image_name = image["file_name"]
+            caption_mapping[os.path.join(images_dir, image_name)] = captions_list
+            text_data.extend(captions_list)
     else:
         raise ValueError("Unknown dataset")
 
