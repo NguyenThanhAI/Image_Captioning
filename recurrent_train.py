@@ -1,6 +1,10 @@
 import os
 import argparse
 
+import pickle
+
+from tqdm import tqdm
+
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -35,6 +39,8 @@ def get_args():
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--dropout_rate", type=float, default=0.4)
     parser.add_argument("--recurrent_type", type=str, default="lstm")
+    parser.add_argument("--config_file", type=str, default=None)
+    parser.add_argument("--data_file", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -94,6 +100,8 @@ if __name__ == '__main__':
     num_epochs = args.num_epochs
     dropout_rate = args.dropout_rate
     recurrent_type = args.recurrent_type
+    config_file = args.config_file
+    data_file = args.data_file
 
     if not os.path.exists(save_dir):
         os.makedirs(save_dir, exist_ok=True)
@@ -102,11 +110,34 @@ if __name__ == '__main__':
 
     # Split the dataset into training and validation sets
     if os.path.basename(caption_path).startswith("captions") and os.path.basename(caption_path).endswith(".json"):
-        train_data, train_text_data = load_captions_data(filename=caption_path,
-                                                         images_dir=images_dir)
-        valid_data, val_text_data = load_captions_data(filename=val_caption_path,
-                                                       images_dir=val_images_dir)
-        text_data = train_text_data + val_text_data
+        if not os.path.exists(data_file):
+            train_data, train_text_data = load_captions_data(filename=caption_path,
+                                                             images_dir=images_dir)
+            valid_data, val_text_data = load_captions_data(filename=val_caption_path,
+                                                           images_dir=val_images_dir)
+            text_data = train_text_data + val_text_data
+
+            with open(data_file, "wb") as f:
+                pickle.dump({"train": train_data, "val": valid_data, "text_data": text_data}, f)
+                f.close()
+            print("Save data to file")
+        else:
+            with open(data_file, "rb") as f:
+                data = pickle.load(f)
+                train_data = data["train"]
+                valid_data = data["val"]
+                text_data = data["text_data"]
+                f.close()
+            print("Load data from file")
+            keys = train_data.keys()
+
+            for key in tqdm(keys):
+                train_data[os.path.join(images_dir, os.path.basename(key))] = train_data.pop(key)
+
+            keys = valid_data.keys()
+
+            for key in tqdm(keys):
+                valid_data[os.path.join(images_dir, os.path.basename(key))] = valid_data.pop(key)
     else:
         captions_mapping, text_data = load_captions_data(filename=caption_path,
                                                          images_dir=images_dir)
@@ -114,10 +145,16 @@ if __name__ == '__main__':
     print("Number of training samples: ", len(train_data))
     print("Number of validation samples: ", len(valid_data))
 
-    vectorization, num_vocabs = get_text_vectorizer(config_file=None, sequence_length=sequence_length,
-                                                    text_data=text_data)
+    if config_file is None:
+        print("Build and save tokenizer")
+        vectorization, num_vocabs = get_text_vectorizer(config_file=None, sequence_length=sequence_length,
+                                                        text_data=text_data)
 
-    save_text_vectorizer(vectorization=vectorization, config_file=os.path.join(save_dir, "tokenizer.pkl"))
+        save_text_vectorizer(vectorization=vectorization, config_file=os.path.join(save_dir, "tokenizer.pkl"))
+    else:
+        print("Load tokenizer")
+        vectorization, num_vocabs = get_text_vectorizer(config_file=config_file, sequence_length=sequence_length,
+                                                        text_data=None)
 
     print("Num vocabularies: {}".format(num_vocabs))
 
