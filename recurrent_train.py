@@ -41,6 +41,7 @@ def get_args():
     parser.add_argument("--recurrent_type", type=str, default="lstm")
     parser.add_argument("--config_file", type=str, default=None)
     parser.add_argument("--data_file", type=str, default=None)
+    parser.add_argument("--vocab_size", type=int, default=10000)
 
     args = parser.parse_args()
 
@@ -102,6 +103,7 @@ if __name__ == '__main__':
     recurrent_type = args.recurrent_type
     config_file = args.config_file
     data_file = args.data_file
+    vocab_size = args.vocab_size
 
     if not os.path.exists(save_dir):
         os.makedirs(save_dir, exist_ok=True)
@@ -150,7 +152,7 @@ if __name__ == '__main__':
     if config_file is None:
         print("Build and save tokenizer")
         vectorization, num_vocabs = get_text_vectorizer(config_file=None, sequence_length=sequence_length,
-                                                        text_data=text_data)
+                                                        text_data=text_data, vocab_size=vocab_size)
 
         save_text_vectorizer(vectorization=vectorization, config_file=os.path.join(save_dir, "tokenizer.pkl"))
     else:

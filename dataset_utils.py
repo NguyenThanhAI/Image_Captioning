@@ -55,14 +55,14 @@ def load_captions_data(filename, images_dir: str):
         df = pd.read_csv(filename, sep='|', header=None)
         records = df.to_records(index=False)
         records = list(records)[1:]
-        captions_mapping = {}
+        caption_mapping = {}
         text_data = []
         # "<start> " + caption.strip() + " <end>"
         for image, captions in groupby(records, key=lambda x: x[0]):
             caption_list = list(captions)
             # print(type(caption_list[0][2]), caption_list[0][2])
             caption_list = list(map(lambda x: "<start> " + str(x[2]).strip() + " <end>", caption_list))
-            captions_mapping[os.path.join(images_dir, image)] = caption_list
+            caption_mapping[os.path.join(images_dir, image)] = caption_list
             text_data.extend(caption_list)
     elif os.path.basename(filename).startswith("captions") and os.path.basename(filename).endswith(".json"):
         with open(filename, "r") as f:
@@ -154,7 +154,7 @@ def custom_standardization(input_string):
 #print(vectorization.get_vocabulary())
 
 
-def get_text_vectorizer(config_file: str, sequence_length: int, text_data: List[str]) -> Tuple[TextVectorization, int]:
+def get_text_vectorizer(config_file: str, sequence_length: int, text_data: List[str], vocab_size: int) -> Tuple[TextVectorization, int]:
     if config_file is not None:
         with open(config_file, "rb") as f:
             config = pickle.load(f)
@@ -162,7 +162,7 @@ def get_text_vectorizer(config_file: str, sequence_length: int, text_data: List[
         vectorization.set_weights(config["weights"])
     else:
         vectorization = TextVectorization(
-            max_tokens=None,
+            max_tokens=vocab_size,
             output_mode="int",
             output_sequence_length=sequence_length,
             standardize=custom_standardization,
