@@ -1,224 +1,210 @@
 import os
-
-import re
+import argparse
 
 import pickle
 
-import json
-
-from typing import Tuple, List
-from itertools import groupby
 from tqdm import tqdm
 
-import pandas as pd
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 import tensorflow as tf
-from tensorflow.keras.layers.experimental.preprocessing import TextVectorization
+from tensorflow import keras
+
+from transformer_models import get_cnn_model, TransformerEncoderBlock, TransformerDecoderBlock, ImageCaptioningModel
+from dataset_utils import load_captions_data, train_val_split, get_text_vectorizer, save_text_vectorizer, make_dataset, \
+    read_image
 
 
-def load_captions_data(filename, images_dir: str):
-    """Loads captions (text) data and maps them to corresponding images.
-
-    Args:
-        filename: Path to the text file containing caption data.
-
-    Returns:
-        caption_mapping: Dictionary mapping image names and the corresponding captions
-        text_data: List containing all the available captions
-    """
-    if os.path.basename(filename) == "Flickr8k.token.txt":
-        with open(filename) as caption_file:
-            caption_data = caption_file.readlines()
-            caption_mapping = {}
-            text_data = []
-
-            for line in caption_data:
-                line = line.rstrip("\n")
-                # Image name and captions are separated using a tab
-                img_name, caption = line.split("\t")
-                # Each image is repeated five times for the five different captions. Each
-                # image name has a prefix `#(caption_number)`
-                img_name = img_name.split("#")[0]
-                img_name = os.path.join(images_dir, img_name.strip())
-
-                if img_name.endswith("jpg"):
-                    # We will add a start and an end token to each caption
-                    caption = "<start> " + caption.strip() + " <end>"
-                    text_data.append(caption)
-
-                    if img_name in caption_mapping:
-                        caption_mapping[img_name].append(caption)
-                    else:
-                        caption_mapping[img_name] = [caption]
-    elif os.path.basename(filename) == "result.csv":
-        df = pd.read_csv(filename, sep='|', header=None)
-        records = df.to_records(index=False)
-        records = list(records)[1:]
-        caption_mapping = {}
-        text_data = []
-        # "<start> " + caption.strip() + " <end>"
-        for image, captions in groupby(records, key=lambda x: x[0]):
-            caption_list = list(captions)
-            # print(type(caption_list[0][2]), caption_list[0][2])
-            caption_list = list(map(lambda x: "<start> " + str(x[2]).strip() + " <end>", caption_list))
-            caption_mapping[os.path.join(images_dir, image)] = caption_list
-            text_data.extend(caption_list)
-    elif os.path.basename(filename).startswith("captions") and os.path.basename(filename).endswith(".json"):
-        with open(filename, "r") as f:
-            records = json.load(f)
-            f.close()
-
-        images = records["images"]
-        annotations = records["annotations"]
-        annotations.sort(key=lambda x: x["image_id"])
-
-        caption_mapping = {}
-        text_data = []
-        for image_id, captions in tqdm(groupby(annotations, key=lambda x: x["image_id"])):
-            # print("image id: {}, num captions: {}".format(image_id, len(list(captions))))
-            image = list(filter(lambda x: x["id"] == image_id, images))
-            assert len(image) == 1
-            image = image[0]
-            captions_list = list(map(lambda x: "<start> " + str(x["caption"]).strip().replace(".", "") + " <end>", list(captions)))
-            if len(captions_list) != 5:
-                if len(captions_list) < 5:
-                    #print("Number of corresponding captions less than five, add to equal five")
-                    captions_list = captions_list + captions_list[:5 - len(captions_list)]
-                else:
-                    #print("Number of corresponding captions greater than five, get first five captions")
-                    captions_list = captions_list[:5]
-            if len(captions_list) != 5:
-                print(len(captions_list))
-            image_name = image["file_name"]
-            caption_mapping[os.path.join(images_dir, image_name)] = captions_list
-            text_data.extend(captions_list)
-    else:
-        raise ValueError("Unknown dataset")
-
-    return caption_mapping, text_data
+seed = 111
+np.random.seed(seed)
+tf.random.set_seed(seed)
 
 
-def train_val_split(caption_data, train_size=0.8, shuffle=True):
-    """Split the captioning dataset into train and validation sets.
+def get_args():
+    parser = argparse.ArgumentParser()
 
-    Args:
-        caption_data (dict): Dictionary containing the mapped caption data
-        train_size (float): Fraction of all the full dataset to use as training data
-        shuffle (bool): Whether to shuffle the dataset before splitting
+    parser.add_argument("--images_dir", type=str, default=None)
+    parser.add_argument("--val_images_dir", type=str, default=None)
+    parser.add_argument("--caption_path", type=str, default=None)
+    parser.add_argument("--val_caption_path", type=str, default=None)
+    parser.add_argument("--save_dir", type=str, default=None)
+    parser.add_argument("--image_size", type=int, default=299)
+    parser.add_argument("--sequence_length", type=int, default=20)
+    parser.add_argument("--num_heads", type=int, default=2)
+    parser.add_argument("--ff_dim", type=int, default=512)
+    parser.add_argument("--embed_dim", type=int, default=512)
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--buffer_size", type=int, default=2048)
+    parser.add_argument("--num_epochs", type=int, default=30)
+    parser.add_argument("--dropout_rate", type=float, default=0.4)
+    parser.add_argument("--config_file", type=str, default=None)
+    parser.add_argument("--data_file", type=str, default=None)
+    parser.add_argument("--vocab_size", type=int, default=10000)
 
-    Returns:
-        Traning and validation datasets as two separated dicts
-    """
+    args = parser.parse_args()
 
-    # 1. Get the list of all image names
-    all_images = list(caption_data.keys())
-
-    # 2. Shuffle if necessary
-    if shuffle:
-        np.random.shuffle(all_images)
-
-    # 3. Split into training and validation sets
-    train_size = int(len(caption_data) * train_size)
-
-    training_data = {
-        img_name: caption_data[img_name] for img_name in all_images[:train_size]
-    }
-    validation_data = {
-        img_name: caption_data[img_name] for img_name in all_images[train_size:]
-    }
-
-    # 4. Return the splits
-    return training_data, validation_data
+    return args
 
 
-def custom_standardization(input_string):
-    strip_chars = "!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"
-    strip_chars = strip_chars.replace("<", "")
-    strip_chars = strip_chars.replace(">", "")
-    lowercase = tf.strings.lower(input_string)
-    return tf.strings.regex_replace(lowercase, "[%s]" % re.escape(strip_chars), "")
+def generate_caption(sample_img, image_size):
+    # Select a random image from the validation dataset
+    #sample_img = np.random.choice(valid_images)
 
+    # Read the image from the disk
+    sample_img = read_image(sample_img, size=(image_size, image_size))
+    img = sample_img.numpy().astype(np.uint8)
+    plt.imshow(img)
+    plt.show()
 
-#vectorization = TextVectorization(
-#    max_tokens=None,
-#    output_mode="int",
-#    output_sequence_length=20,
-#    standardize=custom_standardization,
-#)
-#vectorization.adapt(text_data)
-#
-#num_vocabs = len(vectorization.get_vocabulary())
-#
-#print("num_vocabs: {}".format(num_vocabs))
-#print(vectorization.get_vocabulary())
+    # Pass the image to the CNN
+    img = tf.expand_dims(sample_img, 0)
+    img = caption_model.cnn_model(img)
 
+    # Pass the image features to the Transformer encoder
+    encoded_img = caption_model.encoder(img, training=False)
 
-def get_text_vectorizer(config_file: str, sequence_length: int, text_data: List[str], vocab_size: int) -> Tuple[TextVectorization, int]:
-    if config_file is not None:
-        with open(config_file, "rb") as f:
-            config = pickle.load(f)
-        vectorization = TextVectorization.from_config(config["config"])
-        vectorization.set_weights(config["weights"])
-    else:
-        vectorization = TextVectorization(
-            max_tokens=vocab_size,
-            output_mode="int",
-            output_sequence_length=sequence_length,
-            standardize=custom_standardization,
+    # Generate the caption using the Transformer decoder
+    decoded_caption = "<start> "
+    for i in range(max_decoded_sentence_length):
+        t_decoded_caption = tf.convert_to_tensor(decoded_caption)[tf.newaxis]
+        tokenized_caption = vectorization(t_decoded_caption)[:, :-1]
+        mask = tf.math.not_equal(tokenized_caption, 0)
+        predictions = caption_model.decoder(
+            tokenized_caption, encoded_img, training=False, mask=mask
         )
-        vectorization.adapt(tf.data.Dataset.from_tensor_slices(text_data)) # Must convert list of string to tf dataset
+        sampled_token_index = np.argmax(predictions[0, i, :])
+        sampled_token = index_lookup[sampled_token_index]
+        if sampled_token == " <end>":
+            break
+        decoded_caption += " " + sampled_token
 
-    num_vocabs = len(vectorization.get_vocabulary())
-
-    return vectorization, num_vocabs
-
-
-def save_text_vectorizer(vectorization: TextVectorization, config_file: str) -> None:
-    with open(config_file, "wb") as f:
-        pickle.dump({"config": vectorization.get_config(),
-                     "weights": vectorization.get_weights()}, f)
+    print("PREDICTED CAPTION:", end=" ")
+    print(decoded_caption.replace("<start> ", "").replace(" <end>", "").strip())
 
 
-def read_image(img_path, size: Tuple[int, int]):
-    img = tf.io.read_file(img_path)
-    img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.resize(img, size=size)
-    img = tf.image.convert_image_dtype(img, tf.float32)
-    return img
+if __name__ == '__main__':
+    args = get_args()
 
+    images_dir = args.images_dir
+    val_images_dir = args.val_images_dir
+    caption_path = args.caption_path
+    val_caption_path = args.val_caption_path
+    save_dir = args.save_dir
+    image_size = args.image_size
+    sequence_length = args.sequence_length
+    num_heads = args.num_heads
+    ff_dim = args.ff_dim
+    embed_dim = args.embed_dim
+    batch_size = args.batch_size
+    buffer_size = args.buffer_size
+    num_epochs = args.num_epochs
+    dropout_rate = args.dropout_rate
+    config_file = args.config_file
+    data_file = args.data_file
+    vocab_size = args.vocab_size
 
-def make_dataset(images, captions, vectorization: TextVectorization,
-                 image_size: int, batch_size: int, buffer_size=2056) -> tf.data.Dataset:
-    img_dataset = tf.data.Dataset.from_tensor_slices(images).map(
-        lambda x: read_image(x, size=(image_size, image_size)), num_parallel_calls=tf.data.AUTOTUNE
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+
+    # Load the dataset
+    
+    # Split the dataset into training and validation sets
+    if os.path.basename(caption_path).startswith("captions") and os.path.basename(caption_path).endswith(".json"):
+        if not os.path.exists(data_file):
+            train_data, train_text_data = load_captions_data(filename=caption_path,
+                                                             images_dir=images_dir)
+            valid_data, val_text_data = load_captions_data(filename=val_caption_path,
+                                                           images_dir=val_images_dir)
+            text_data = train_text_data + val_text_data
+
+            with open(data_file, "wb") as f:
+                pickle.dump({"train": train_data, "val": valid_data, "text_data": text_data}, f)
+                f.close()
+            print("Save data to file")
+        else:
+            with open(data_file, "rb") as f:
+                data = pickle.load(f)
+                train_data = data["train"]
+                valid_data = data["val"]
+                text_data = data["text_data"]
+                f.close()
+            print("Load data from file")
+            keys = list(train_data.keys())
+
+            for key in tqdm(keys):
+                #train_data[os.path.join(images_dir, os.path.basename(key))] = train_data.pop(key)
+                train_data[os.path.join(images_dir, os.path.split(key)[1])] = train_data.pop(key)
+
+            keys = list(valid_data.keys())
+
+            for key in tqdm(keys):
+                #valid_data[os.path.join(val_images_dir, os.path.basename(key))] = valid_data.pop(key)
+                valid_data[os.path.join(val_images_dir, os.path.split(key)[1])] = valid_data.pop(key)
+    else:
+        captions_mapping, text_data = load_captions_data(filename=caption_path,
+                                                         images_dir=images_dir)
+
+        # Split the dataset into training and validation sets
+        train_data, valid_data = train_val_split(captions_mapping)
+    print("Number of training samples: ", len(train_data))
+    print("Number of validation samples: ", len(valid_data))
+
+    if config_file is None:
+        print("Build and save tokenizer")
+        vectorization, num_vocabs = get_text_vectorizer(config_file=None, sequence_length=sequence_length,
+                                                        text_data=text_data, vocab_size=vocab_size)
+
+        save_text_vectorizer(vectorization=vectorization, config_file=os.path.join(save_dir, "tokenizer.pkl"))
+    else:
+        print("Load tokenizer")
+        vectorization, num_vocabs = get_text_vectorizer(config_file=config_file, sequence_length=sequence_length,
+                                                        text_data=None)
+
+    print("Num vocabularies: {}".format(num_vocabs))
+
+    train_dataset = make_dataset(list(train_data.keys()), list(train_data.values()), vectorization=vectorization,
+                                 image_size=image_size, batch_size=batch_size, buffer_size=buffer_size)
+    valid_dataset = make_dataset(list(valid_data.keys()), list(valid_data.values()), vectorization=vectorization,
+                                 image_size=image_size, batch_size=batch_size, buffer_size=buffer_size)
+
+    cnn_model = get_cnn_model(image_size=image_size)
+
+    encoder = TransformerEncoderBlock(embed_dim=embed_dim, dense_dim=ff_dim,  num_heads=num_heads)
+
+    decoder = TransformerDecoderBlock(embed_dim=embed_dim, ff_dim=ff_dim, num_heads=num_heads,
+                                      sequence_length=sequence_length, vocab_size=num_vocabs)
+
+    caption_model = ImageCaptioningModel(cnn_model=cnn_model, encoder=encoder, decoder=decoder)
+
+    cross_entropy = keras.losses.SparseCategoricalCrossentropy(
+        from_logits=True, reduction="none"
     )
-    cap_dataset = tf.data.Dataset.from_tensor_slices(captions).map(
-        vectorization, num_parallel_calls=tf.data.AUTOTUNE
+
+    early_stopping = tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True, monitor="val_acc")
+
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.8,
+                                                  patience=2, min_lr=1e-6, verbose=True)
+
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=os.path.join(save_dir, "caption_model_best.h5"),
+                                                    monitor="val_acc", verbose=1, save_best_only=True,
+                                                    save_weights_only=True, mode="max")
+
+    caption_model.compile(optimizer=keras.optimizers.Adam(), loss=cross_entropy)
+
+    caption_model.fit(
+        train_dataset,
+        epochs=num_epochs,
+        validation_data=valid_dataset,
+        callbacks=[early_stopping, reduce_lr, checkpoint]
     )
-    dataset = tf.data.Dataset.zip((img_dataset, cap_dataset))
-    dataset = dataset.shuffle(buffer_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
-    return dataset
 
+    vocab = vectorization.get_vocabulary()
+    index_lookup = dict(zip(range(len(vocab)), vocab))
+    max_decoded_sentence_length = sequence_length - 1
+    valid_images = list(valid_data.keys())
 
-## Load the dataset
-#captions_mapping, text_data = load_captions_data(filename=r"F:\Flickr8k_text\Flickr8k.token.txt",
-#                                                 images_dir=r"F:\Flickr8k_Dataset\Flicker8k_Dataset")
-#
-## Split the dataset into training and validation sets
-#train_data, valid_data = train_val_split(captions_mapping)
-#print("Number of training samples: ", len(train_data))
-#print("Number of validation samples: ", len(valid_data))
-#
-#
-#vectorization, num_vocabs = get_text_vectorizer(config_file=None, sequence_length=20, text_data=text_data)
-#
-#print(num_vocabs)
-#
-#train_dataset = make_dataset(list(train_data.keys()), list(train_data.values()), vectorization=vectorization, image_size=299, batch_size=4, buffer_size=128)
-#valid_dataset = make_dataset(list(valid_data.keys()), list(valid_data.values()), vectorization=vectorization, image_size=299, batch_size=4, buffer_size=128)
-#
-#for batch_data in train_dataset:
-#    batch_img, batch_seq = batch_data
-#
-#    print(batch_img.numpy().shape, batch_seq.shape)
+    for _ in range(10):
+        sample_img = np.random.choice(valid_images)
+        generate_caption(sample_img=sample_img, image_size=image_size)
