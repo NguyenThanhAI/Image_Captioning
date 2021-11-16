@@ -38,7 +38,6 @@ def get_args():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--buffer_size", type=int, default=2048)
     parser.add_argument("--num_epochs", type=int, default=30)
-    parser.add_argument("--dropout_rate", type=float, default=0.4)
     parser.add_argument("--config_file", type=str, default=None)
     parser.add_argument("--data_file", type=str, default=None)
     parser.add_argument("--vocab_size", type=int, default=10000)
@@ -100,7 +99,6 @@ if __name__ == '__main__':
     batch_size = args.batch_size
     buffer_size = args.buffer_size
     num_epochs = args.num_epochs
-    dropout_rate = args.dropout_rate
     config_file = args.config_file
     data_file = args.data_file
     vocab_size = args.vocab_size
@@ -109,8 +107,6 @@ if __name__ == '__main__':
         os.makedirs(save_dir, exist_ok=True)
 
     # Load the dataset
-    
-    # Split the dataset into training and validation sets
     if os.path.basename(caption_path).startswith("captions") and os.path.basename(caption_path).endswith(".json"):
         if not os.path.exists(data_file):
             train_data, train_text_data = load_captions_data(filename=caption_path,
@@ -145,8 +141,6 @@ if __name__ == '__main__':
     else:
         captions_mapping, text_data = load_captions_data(filename=caption_path,
                                                          images_dir=images_dir)
-
-        # Split the dataset into training and validation sets
         train_data, valid_data = train_val_split(captions_mapping)
     print("Number of training samples: ", len(train_data))
     print("Number of validation samples: ", len(valid_data))
@@ -155,7 +149,7 @@ if __name__ == '__main__':
         print("Build and save tokenizer")
         vectorization, num_vocabs = get_text_vectorizer(config_file=None, sequence_length=sequence_length,
                                                         text_data=text_data, vocab_size=vocab_size)
-
+                                                        
         save_text_vectorizer(vectorization=vectorization, config_file=os.path.join(save_dir, "tokenizer.pkl"))
     else:
         print("Load tokenizer")
