@@ -51,7 +51,7 @@ def load_captions_data(filename, images_dir: str):
                         caption_mapping[img_name].append(caption)
                     else:
                         caption_mapping[img_name] = [caption]
-    elif os.path.basename(filename) == "result.csv":
+    elif os.path.basename(filename) == "result.csv" or os.path.basename(filename) == "results.csv":
         df = pd.read_csv(filename, sep='|', header=None)
         records = df.to_records(index=False)
         records = list(records)[1:]
