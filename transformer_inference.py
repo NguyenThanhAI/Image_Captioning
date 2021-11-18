@@ -25,6 +25,7 @@ def get_args():
     parser.add_argument("--model_dir", type=str, default=None)
     parser.add_argument("--config_file", type=str, default=None)
     parser.add_argument("--image_size", type=int, default=299)
+    parser.add_argument("--vocab_size", type=int, default=10000)
     parser.add_argument("--sequence_length", type=int, default=20)
     parser.add_argument("--num_heads", type=int, default=2)
     parser.add_argument("--ff_dim", type=int, default=512)
@@ -35,12 +36,12 @@ def get_args():
     return args
 
 
-def generate_caption(sample_img):
+def generate_caption(sample_img, image_size):
     # Select a random image from the validation dataset
     #sample_img = np.random.choice(valid_images)
 
     # Read the image from the disk
-    sample_img = read_image(sample_img, size=(299, 299))
+    sample_img = read_image(sample_img, size=(image_size, image_size))
     img = sample_img.numpy().astype(np.uint8)
     plt.imshow(img)
     plt.show()
@@ -67,8 +68,6 @@ def generate_caption(sample_img):
             break
         decoded_caption += " " + sampled_token
 
-    #print("PREDICTED CAPTION:", end=" ")
-    #print(decoded_caption.replace("<start> ", "").replace(" <end>", "").strip())
     return decoded_caption.replace("<start> ", "").replace(" <end>", "").strip()
 
 
@@ -79,12 +78,13 @@ if __name__ == '__main__':
     model_dir = args.model_dir
     config_file = args.config_file
     image_size = args.image_size
+    vocab_size = args.vocab_size
     sequence_length = args.sequence_length
     num_heads = args.num_heads
     ff_dim = args.ff_dim
     embed_dim = args.embed_dim
 
-    vectorization, num_vocabs = get_text_vectorizer(config_file=config_file, sequence_length=20, text_data=None)
+    vectorization, num_vocabs = get_text_vectorizer(config_file=config_file, sequence_length=20, text_data=None, vocab_size=vocab_size)
 
     print("Num vocabularies: {}".format(num_vocabs))
 
@@ -101,10 +101,10 @@ if __name__ == '__main__':
     index_lookup = dict(zip(range(len(vocab)), vocab))
     max_decoded_sentence_length = sequence_length - 1
 
-    generate_caption(image_path)
+    generate_caption(image_path, image_size=image_size)
 
     caption_model.load_weights(os.path.join(model_dir, "caption_model_best.h5"))
 
-    caption = generate_caption(image_path)
+    caption = generate_caption(image_path, image_size=image_size)
     print("PREDICTED CAPTION:", end=" ")
     print(caption)
